@@ -42,9 +42,3 @@ class FrameReader:
             frames.append(payload)
 
         return frames
-
-
-
-
-
-reader.feed(encode_frame(b"hello") + encode_frame(b"world"))
