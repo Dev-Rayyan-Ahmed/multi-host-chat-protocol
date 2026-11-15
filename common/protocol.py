@@ -12,9 +12,13 @@ class ProtocolError(Exception):
         self.message = message
 
 def validate_username(username: str) -> bool:
-    if not isinstance(username, str) or username.upper() == "ALL":
-        return False
-    return bool(USERNAME_REGEX.match(username))
+    if not isinstance(username, str) or not USERNAME_REGEX.match(username):
+        raise ProtocolError(400, "INVALID_USERNAME", "Username must be 3-16 alphanumeric characters or underscores.")
+    
+    if username.upper() == "ALL":
+        raise ProtocolError(400, "RESERVED_USERNAME", "'ALL' is a reserved username.")
+        
+    return True 
 
 def encode_message(data: dict) -> bytes:
     """Converts a Python dict to UTF-8 JSON bytes."""
