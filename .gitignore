@@ -4,3 +4,5 @@ common/__pycache__/protocol.cpython-314.pyc
 tests/__pycache__/test_milestone_1.cpython-314.pyc
 tests/__pycache__
 common/__pycache__
+client/__pycache__
+server/__pycache__
