@@ -1,8 +1,56 @@
-common/__pycache__/__init__.cpython-314.pyc
-common/__pycache__/framing.cpython-314.pyc
-common/__pycache__/protocol.cpython-314.pyc
-tests/__pycache__/test_milestone_1.cpython-314.pyc
-tests/__pycache__
-common/__pycache__
-client/__pycache__
-server/__pycache__
+# ─── Horizon Relay ───────────────────────────────────────────────────────────
+# A fresh clone / ZIP must start with ZERO accounts and chats:
+# the server creates horizon_relay.db on first run, and each client keeps its
+# own history in %LOCALAPPDATA%\HorizonRelay (outside the repository).
+
+# Runtime databases (server accounts + messages, any local test stores)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# Python bytecode & caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Packaging / build output
+build/
+dist/
+*.egg-info/
+*.spec
+
+# Logs & temporary files
+*.log
+*.tmp
+*.bak
+*.swp
+
+# Editors / IDEs / assistants
+.vscode/
+.idea/
+*.code-workspace
+.claude/
+
+# OS clutter
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# NOT ignored on purpose:
+#   assets/backgrounds/purple_black_hole_pingpong.mp4  (lets fresh downloads animate without FFmpeg)
+#   assets/backgrounds/purple_black_hole_poster.jpg
+#   docs/screenshots/                                    (used by the README)

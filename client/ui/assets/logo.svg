@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <title>Horizon Relay</title>
+  <!-- Faceted hexagon; the negative-space H is two relay pillars joined by a horizon link -->
+  <path fill="#B39AE9" fill-rule="evenodd"
+        d="M32 4 L7.75 18 L7.75 46 L32 60 Z M18.5 17 L25.5 17 L25.5 29 L32 29 L32 35 L25.5 35 L25.5 47 L18.5 47 Z"/>
+  <path fill="#7D5BD6" fill-rule="evenodd"
+        d="M32 4 L56.25 18 L56.25 46 L32 60 Z M45.5 17 L38.5 17 L38.5 29 L32 29 L32 35 L38.5 35 L38.5 47 L45.5 47 Z"/>
+</svg>

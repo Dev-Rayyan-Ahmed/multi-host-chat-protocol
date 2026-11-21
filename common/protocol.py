@@ -47,6 +47,28 @@ def validate_text(text: str) -> bool:
     return True
 
 
+# --- Delivery status updates (server -> client) ---------------------------------------
+# Sent to the ORIGINAL SENDER of a private message that was queued (SEND_ACK status=queued)
+# once the recipient's client acknowledged the pending batch with SYNC_COMPLETE.
+# "delivered" means the recipient's application processed the message; it is NOT a read receipt.
+DELIVERY_UPDATE = "DELIVERY_UPDATE"
+DELIVERY_STATUSES = ("delivered",)
+
+
+def make_delivery_update(seq: int, to: str, status: str = "delivered") -> dict:
+    return {"type": DELIVERY_UPDATE, "seq": seq, "to": to, "status": status}
+
+
+def parse_delivery_update(msg: dict) -> tuple[int, str, str] | None:
+    """Validates a DELIVERY_UPDATE frame; returns (seq, to, status) or None if malformed."""
+    seq, to, status = msg.get("seq"), msg.get("to"), msg.get("status")
+    if not isinstance(seq, int) or isinstance(seq, bool) or not isinstance(to, str):
+        return None
+    if status not in DELIVERY_STATUSES:
+        return None
+    return seq, to, status
+
+
 def encode_message(data: dict) -> bytes:
     """Converts a Python dict to UTF-8 JSON bytes."""
     if not isinstance(data, dict) or "type" not in data:

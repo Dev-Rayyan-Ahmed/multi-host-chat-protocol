@@ -3,6 +3,7 @@ import threading
 from typing import Callable
 from common.protocol import (
     ProtocolError,
+    make_delivery_update,
     validate_password,
     validate_text,
     validate_username,
@@ -119,6 +120,8 @@ class ChatService:
             client.state = "LOGGED_IN"
             client.username = canonical_user
             sync_id, pending_frames, history_frames = self.storage.create_sync_batch(canonical_user)
+            # Delivery news for messages this user queued earlier (delivered while they were away)
+            update_frames = self.storage.attach_status_updates(sync_id, canonical_user)
             client.active_sync_id = sync_id
             self.online_users[norm_user] = client
 
@@ -136,6 +139,7 @@ class ChatService:
                     "sync_id": sync_id,
                     "pending": len(pending_frames),
                     "history": len(history_frames),
+                    "updates": len(update_frames),
                 }
             )
             # 4. All pending DELIVER frames (oldest first)
@@ -144,6 +148,9 @@ class ChatService:
             # 5. All history DELIVER frames
             for h_frame in history_frames:
                 client.send(h_frame)
+            # 5b. DELIVERY_UPDATE frames (confirmed by this batch's SYNC_COMPLETE)
+            for u_frame in update_frames:
+                client.send(u_frame)
             # 6. SYNC_END
             client.send({"type": "SYNC_END", "sync_id": sync_id})
 
@@ -228,8 +235,15 @@ class ChatService:
             raise ProtocolError(400, "BAD_FORMAT", "Invalid or unexpected sync_id.")
 
         with self.lock:
-            self.storage.complete_sync_batch(client.username, sync_id)
+            _ok, newly_delivered = self.storage.complete_sync_batch_detailed(client.username, sync_id)
             client.active_sync_id = None
+            # The recipient's app has acknowledged these queued messages: tell each original
+            # sender who is online now. This live push is best effort; the durable path is the
+            # sender's next login sync (sender_notified stays 0 until a sync batch confirms it).
+            for item in newly_delivered:
+                sender_handle = self.online_users.get(item["sender"].lower())
+                if sender_handle is not None and sender_handle is not client:
+                    sender_handle.deliver_live(make_delivery_update(item["seq"], item["recipient"]))
             # Release any live messages that arrived while this client was syncing!
             for held_msg in client.held_live_messages:
                 client.send(held_msg)

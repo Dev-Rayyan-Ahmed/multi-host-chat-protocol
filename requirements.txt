@@ -1,0 +1,7 @@
+cryptography>=42
+argon2-cffi>=23.1
+PySide6-Essentials>=6.6
+# animated login background (Qt Multimedia); keep the same version as PySide6-Essentials
+PySide6-Addons>=6.6
+# only needed once, to build the ping-pong video (tools/make_pingpong.py); or install FFmpeg itself
+imageio-ffmpeg>=0.5

@@ -57,8 +57,23 @@ class Storage:
                     message_seq INTEGER NOT NULL,
                     PRIMARY KEY (sync_id, message_seq)
                 );
+
+                -- DELIVERY_UPDATE notifications included in a sender's login sync batch;
+                -- confirmed (sender_notified = 1) only when that batch's SYNC_COMPLETE arrives.
+                CREATE TABLE IF NOT EXISTS sync_batch_updates (
+                    sync_id TEXT NOT NULL,
+                    message_seq INTEGER NOT NULL,
+                    PRIMARY KEY (sync_id, message_seq)
+                );
                 """
             )
+            # In-place migration for databases created before delivery updates existed.
+            cols = {r["name"] for r in self.conn.execute("PRAGMA table_info(messages)")}
+            if "was_queued" not in cols:
+                self.conn.execute("ALTER TABLE messages ADD COLUMN was_queued INTEGER NOT NULL DEFAULT 0")
+                self.conn.execute("UPDATE messages SET was_queued = 1 WHERE delivery_state = 'pending'")
+            if "sender_notified" not in cols:
+                self.conn.execute("ALTER TABLE messages ADD COLUMN sender_notified INTEGER NOT NULL DEFAULT 0")
 
     def create_account(self, username: str, password: str) -> bool:
         """
@@ -137,10 +152,10 @@ class Storage:
         with self.lock, self.conn:
             cur = self.conn.execute(
                 """
-                INSERT INTO messages (sender, recipient, text, timestamp, delivery_state)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO messages (sender, recipient, text, timestamp, delivery_state, was_queued)
+                VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                (sender, recipient, text, ts, delivery_state),
+                (sender, recipient, text, ts, delivery_state, 1 if delivery_state == "pending" else 0),
             )
             return cur.lastrowid, ts
 
@@ -227,6 +242,82 @@ class Storage:
         ]
 
         return sync_id, pending_frames, history_frames
+
+    def attach_status_updates(self, sync_id: str, username: str) -> list[dict]:
+        """
+        Finds this user's previously queued private messages that have since been delivered
+        but whose sender (this user) has not yet confirmed the news, records them in the sync
+        batch, and returns DELIVERY_UPDATE frames to send inside SYNC_BEGIN ... SYNC_END.
+        """
+        with self.lock, self.conn:
+            rows = self.conn.execute(
+                """
+                SELECT seq, recipient FROM messages
+                WHERE LOWER(sender) = LOWER(?) AND recipient != 'ALL'
+                  AND was_queued = 1 AND delivery_state = 'delivered' AND sender_notified = 0
+                ORDER BY seq ASC
+                """,
+                (username,),
+            ).fetchall()
+            for r in rows:
+                self.conn.execute(
+                    "INSERT OR IGNORE INTO sync_batch_updates (sync_id, message_seq) VALUES (?, ?)",
+                    (sync_id, r["seq"]),
+                )
+        return [
+            {"type": "DELIVERY_UPDATE", "seq": r["seq"], "to": r["recipient"], "status": "delivered"}
+            for r in rows
+        ]
+
+    def complete_sync_batch_detailed(self, username: str, sync_id: str) -> tuple[bool, list[dict]]:
+        """
+        Transactionally completes a sync batch:
+          * pending messages in the batch become 'delivered' (the recipient acknowledged them),
+          * delivery updates included in the batch are marked as seen by their sender.
+        Returns (ok, newly_delivered) where newly_delivered lists {seq, sender, recipient} for
+        messages that changed from pending to delivered in THIS call (never twice).
+        """
+        with self.lock, self.conn:
+            row = self.conn.execute(
+                "SELECT status FROM sync_batches WHERE sync_id = ? AND LOWER(recipient) = LOWER(?)",
+                (sync_id, username),
+            ).fetchone()
+            if not row or row["status"] != "open":
+                return False, []
+            newly = self.conn.execute(
+                """
+                SELECT m.seq, m.sender, m.recipient FROM messages m
+                JOIN sync_batch_messages b ON b.message_seq = m.seq
+                WHERE b.sync_id = ? AND m.delivery_state = 'pending'
+                ORDER BY m.seq ASC
+                """,
+                (sync_id,),
+            ).fetchall()
+            self.conn.execute(
+                """
+                UPDATE messages SET delivery_state = 'delivered'
+                WHERE delivery_state = 'pending'
+                  AND seq IN (SELECT message_seq FROM sync_batch_messages WHERE sync_id = ?)
+                """,
+                (sync_id,),
+            )
+            self.conn.execute(
+                """
+                UPDATE messages SET sender_notified = 1
+                WHERE seq IN (SELECT message_seq FROM sync_batch_updates WHERE sync_id = ?)
+                """,
+                (sync_id,),
+            )
+            self.conn.execute("UPDATE sync_batches SET status = 'completed' WHERE sync_id = ?", (sync_id,))
+        return True, [{"seq": r["seq"], "sender": r["sender"], "recipient": r["recipient"]} for r in newly]
+
+    def delivery_state(self, seq: int) -> tuple[str, int, int] | None:
+        """(delivery_state, was_queued, sender_notified) for a message; used by tests/diagnostics."""
+        with self.lock:
+            r = self.conn.execute(
+                "SELECT delivery_state, was_queued, sender_notified FROM messages WHERE seq = ?", (seq,)
+            ).fetchone()
+        return (r["delivery_state"], r["was_queued"], r["sender_notified"]) if r else None
 
     def complete_sync_batch(self, username: str, sync_id: str) -> bool:
         """
